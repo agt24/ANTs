@@ -106,7 +106,7 @@ Optional arguments:
           2 = use PEXEC (localhost)
           3 = Apple XGrid
           4 = PBS qsub
-          5 = SLURM
+          5= SLURM
 
      -e   use single precision ( default 1 )
 
@@ -466,6 +466,9 @@ time_start=`date +%s`
 currentdir=`pwd`
 nargs=$#
 
+SLURMCOMMAND="sbatch"
+# For testing
+#SLURMCOMMAND="echo sbatch"
 STATSMETHOD=1
 USEFLOAT=1
 BACKUPEACHITERATION=0
@@ -519,12 +522,15 @@ if [[ "$1" == "-h" ]];
   fi
 
 # reading command line arguments
-while getopts "a:b:c:d:e:f:g:h:i:j:k:l:m:n:o:p:q:s:r:t:u:v:w:x:y:z:" OPT
+while getopts "a:b:c:d:e:f:g:h:i:j:k:l:m:n:o:p:q:s:r:t:u:v:w:x:y:z:1:" OPT
   do
   case $OPT in
       h) #help
       Usage >&2
       exit 0
+   ;;
+      1) # Pass affine trasform
+	  AFFXFM=$OPTARG
    ;;
       a) # summarizing statisitic
       STATSMETHOD=$OPTARG
@@ -1065,7 +1071,7 @@ if [[ "$RIGID" -eq 1 ]];
             jobIDs="$jobIDs $id"
         elif [[ $DOQSUB -eq 5 ]];
             then
-            id=`sbatch --job-name=antsrigid --export=ANTSPATH=$ANTSPATH $QSUBOPTS --nodes=1 --cpus-per-task=${CORES} --time=${WALLTIME} --mem=${MEMORY} $qscript | rev | cut -f1 -d\ | rev`
+            id=`${SLURMCOMMAND} --job-name=antsrigid --export=ANTSPATH=$ANTSPATH $QSUBOPTS --nodes=1 --cpus-per-task=${CORES} --time=${WALLTIME} --mem=${MEMORY} $qscript | rev | cut -f1 -d\ | rev`
             jobIDs="$jobIDs $id"
             sleep 0.5
         elif [[ $DOQSUB -eq 0 ]];
@@ -1357,6 +1363,7 @@ while [[ $i -lt ${ITERATIONLIMIT} ]];
         OUTWARPFN=`basename ${OUTWARPFN}${j}`
 
         stage0="-r [${TEMPLATES[0]},${IMAGESETARRAY[$j]},1]"
+	rigidInit="-r ${indir}/${OUTWARPFN}0GenericAffine.mat "
         stage1="-t Rigid[0.1] ${IMAGEMETRICLINEARSET} -c [1000x500x250x0,1e-6,10] -f 6x4x2x1 -s 4x2x1x0"
         stage2="-t Affine[0.1] ${IMAGEMETRICLINEARSET} -c [1000x500x250x0,1e-6,10] -f 6x4x2x1 -s 4x2x1x0"
         #stage1="-t Rigid[0.1] ${IMAGEMETRICLINEARSET} -c [10x10x10x10,1e-8,10] -f 8x4x2x1 -s 4x2x1x0"
@@ -1366,21 +1373,31 @@ while [[ $i -lt ${ITERATIONLIMIT} ]];
         stageId="-t Rigid[0.1] ${IMAGEMETRICLINEARSET} -c [0,1e-8,10] -f 1 -s 0"
         exebase=$exe
         pexebase=$pexe
-
+	echo DOLINEAR eq $DOLINEAR
         if [[ $DOLINEAR -ne 0 ]];
           then
             exe="$exe ${basecall} ${stage0} ${stage1} ${stage2} ${stage3}\n"
             pexe="$pexe ${basecall} ${stage0} ${stage1} ${stage2} ${stage3} >> ${outdir}/job_${count}_metriclog.txt\n"
           else
             exe="$exe ${basecall} ${stageId} ${stage3}\n"
-            pexe="$pexe ${basecall} ${stageId} ${stage3} >> ${outdir}/job_${count}_metriclog.txt\n"
+           pexe="$pexe ${basecall} ${stageId} ${stage3} >> ${outdir}/job_${count}_metriclog.txt\n"
           fi
         if [[ $NOWARP -eq 0 ]];
           then
            exe="$exebase ${basecall} ${stage0} ${stage1} ${stage2} ${stage3}\n";
            pexe="$pexebase ${basecall} ${stage0} ${stage1} ${stage2} ${stage3} >> ${outdir}/job_${count}_metriclog.txt\n"
         fi
+	if [[ $DOLINEAR -eq 2 ]]; then
+	    echo derpymark
+	    rigidInit=$rigidInit
+	    exebase=$exebase
+	    basecall=$basecall
+	    stage3=$stage3
 
+            exe="$exebase ${basecall} $rigidInit ${stage3}\n"
+            pexe="$pexebase ${basecall} ${stage3} >> ${outdir}/job_${count}_metriclog.txt\n"
+        fi
+ 
         exe="$exe $warpexe"
         pexe="$pexe $warppexe"
 
@@ -1416,7 +1433,7 @@ while [[ $i -lt ${ITERATIONLIMIT} ]];
             echo '#!/bin/sh' > $qscript
             echo -e "$SCRIPTPREPEND" >> $qscript
             echo -e "$exe" >> $qscript
-            id=`sbatch --job-name=ad${i}_${RID} --export=ANTSPATH=$ANTSPATH --nodes=1 --cpus-per-task=${CORES} --time=${WALLTIME} --mem=${MEMORY} $QSUBOPTS $qscript | rev | cut -f1 -d\ | rev`
+            id=`${SLURMCOMMAND} --job-name=ad${i}_${RID} --export=ANTSPATH=$ANTSPATH --nodes=1 --cpus-per-task=${CORES} --time=${WALLTIME} --mem=${MEMORY} $QSUBOPTS $qscript | rev | cut -f1 -d\ | rev`
             jobIDs="$jobIDs $id"
             sleep 0.5
         elif [[ $DOQSUB -eq 0 ]];
